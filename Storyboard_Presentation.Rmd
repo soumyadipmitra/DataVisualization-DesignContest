@@ -1,0 +1,575 @@
+---
+title: "Design Contest"
+output: 
+  flexdashboard::flex_dashboard:
+    source_code: embed
+    theme: spacelab
+    social: [ "twitter", "facebook", "menu" ]
+---
+```{r include=FALSE}
+library(flexdashboard)
+library(ggplot2)
+library(tidyverse)
+library(tidyr)
+library(lubridate)
+```
+
+```{r load-data}
+ipf_lifts <- read_csv("data/ipf_lifts.csv")
+```
+```{r clean_data-01}
+ipf_lifts1 <- ipf_lifts %>% 
+  mutate(year = lubridate::year(date))
+
+ipf_lifts_reshape <- ipf_lifts1 %>% 
+  tidyr::pivot_longer(cols = c("best3squat_kg", "best3bench_kg", "best3deadlift_kg"), names_to = "lift") %>% 
+  select(name, sex, year, lift, value)
+```
+
+```{r clean_data-02}
+ipf_lifts_maxes <- ipf_lifts_reshape %>% 
+  group_by(year, sex, lift) %>% 
+  top_n(1, value) %>% 
+  ungroup %>% 
+  distinct(year, lift, value, .keep_all = TRUE)
+```
+
+```{r clean_data-03}
+max_pivot <- ipf_lifts_maxes %>% 
+  spread(sex, value)
+```
+
+```{r clean_data-04}
+male_lifts <- max_pivot %>% 
+  select(-name) %>% 
+  filter(!is.na(M)) %>% 
+  group_by(year, lift) %>% 
+  summarise(male = mean(M))
+
+female_lifts <- max_pivot %>% 
+  select(-name) %>% 
+  filter(!is.na(`F`)) %>% 
+  group_by(year, lift) %>% 
+  summarise(female = mean(`F`))
+
+max_lifts <- merge(male_lifts, female_lifts)
+
+max_lifts_final <- max_lifts %>% 
+  group_by(year, lift) %>% 
+  mutate(diff = male - female)
+```
+Introduction {.storyboard}
+=========================================
+
+###  #tidytuesday-POWERLIFTING
+
+```{r intro-01,fig.height=5, fig.width=8}
+library("png")
+
+pp <- readPNG("img/Introduction.PNG")
+plot.new() 
+rasterImage(pp,0,0,1,1)
+```
+
+***
+
+
+
+
+#TidyTuesday - Powerlifting
+
+Powerlifting is a strength sport and weight training exercise that consists of three attempts at maximal weight on the following three lifts: 
+
+1.Squat
+
+2.Bench press
+
+3.Deadlift.
+
+
+
+Powerlifting is becoming a popular sport now-a-days. The idea behind powerlifting is not focused on gaining muscle but rather building strength to lift as much weight as possible.
+
+
+### DATA DESCRIPTION
+
+
+```{r basic-distribution, fig.height=6, fig.width=12, echo=FALSE}
+
+p_distribution <- ipf_lifts %>% 
+
+  select(starts_with("best3")) %>% 
+
+  rename(Squat = "best3squat_kg", 
+
+         Bench = "best3bench_kg",
+
+         Deadlift = "best3deadlift_kg") %>% 
+
+  pivot_longer(cols = everything(), names_to = "type", values_to = "weight") %>% 
+
+  filter(!is.na(weight) & weight > 0) %>% 
+
+  ggplot(aes(x = weight)) +
+
+    geom_histogram(binwidth = 10) +
+
+    facet_wrap(facets = ~ type) +
+
+  labs(title = "Distribution of maximum weights lifted",
+
+       subtitle = "",
+
+       x = "Maximum weight lifted (kgs)",
+
+       y = "Count") +
+
+    theme(axis.ticks = element_blank())
+
+
+
+p_distribution
+```
+
+***
+
+#About the Data
+
+We are exploring Powerlifting Dataset focusing on international powerlifting compitations. This dataset was published in #TidyTuesday - R4DS Online Learning Community on 10-8-2019.
+
+https://www.tidytuesday.com/
+
+https://github.com/rfordatascience/tidytuesday
+
+The source data is available at : https://openpowerlifting.org/data
+
+The dataset contains 41,152 observations and 16 variables.Only IPF federation records are analyzed.
+
+Each lifter’s efforts in different events are represented by a single row.
+
+
+#MissingData
+
+We choose some key variables and plot a simple summary of missingness. 
+
+```{r missing-data, echo=FALSE}
+
+library(naniar) 
+p_missing_data <- ipf_lifts %>% 
+
+  select(sex, age, bodyweight_kg, starts_with("best3"), date) %>% 
+
+  naniar::miss_var_summary()%>%
+  arrange(variable)
+
+
+p_missing_data 
+
+```
+
+
+
+Replication {.storyboard}
+=========================================
+
+### Replicating Connor Rothschild's #tidyTuesday submission for Powerlifting
+
+```{r viz-01}
+#install.packages("devtools")
+#devtools::install_github("clauswilke/ggtext")
+#devtools::install_github("connorrothschild/tpltheme")
+library(tpltheme)
+#install.packages("ggalt")
+library(ggtext)
+max_lifts_final %>% 
+  filter(year == 2019) %>% 
+  ggplot() + 
+  ggalt::geom_dumbbell(aes(y = lift,
+                    x = female, xend = male),
+                colour = "grey", size = 5,
+                colour_x = "#D6604C", colour_xend = "#395B74") +
+  labs(y = element_blank(),
+       x = "Top Lift Recorded (kg)",
+       title =  "How <span style='color:#D6604C'>Women</span> and <span style='color:#395B74'>Men</span> Differ in Top Lifts",
+       subtitle = "In 2019") +
+  theme(plot.title = element_markdown(lineheight = 1.1, size = 20),
+        plot.subtitle = element_text(size = 15)) +
+  scale_y_discrete(labels = c("Bench", "Deadlift", "Squat")) +
+  drop_axis(axis = "y") +
+  geom_text(aes(x = female, y = lift, label = paste(female, "kg")),
+            color = "#D6604C", size = 4, vjust = -2) +
+  geom_text(aes(x = male, y = lift, label = paste(male, "kg")),
+            color = "#395B74", size = 4, vjust = -2) +
+  geom_rect(aes(xmin=430, xmax=470, ymin=-Inf, ymax=Inf), fill="grey80") +
+  geom_text(aes(label=diff, y=lift, x=450), fontface="bold", size=4) +
+  geom_text(aes(x=450, y=3, label="Difference"),
+                     color="grey20", size=4, vjust=-3, fontface="bold")
+```
+
+***
+
+How Women and Men differ in Top lifts:
+
+
+This is the animated dumbbell plots of the difference between the best male & female powerlifters at IPF events, Using #gganimate (and faceting w/ {magick}).
+
+github link: https://connorrothschild.github.io/tidytuesday/2019-10-08/index
+
+
+This static visualization shows the heaviest lifts from each year for both men and women categories.
+
+
+1.	The axis labels, axis tick labels, and other plot annotations are appropriately sized, making it easy to read as highlighted in Wile Chapter 24”Use larger labels” https://serialmentor.com/dataviz/small-axis-labels.html
+
+2.	Whenver possible, design your figures so they don’t need a legend as highlighted in Wilke Chapter 20,”Redundant Coding” https://serialmentor.com/dataviz/redundant-coding.html and this visual makes use of this learning.
+
+3.	The visual has successfully avoided both overloading the figure with non-data ink and excessively erasing non-data ink thus escaping poor figure design. The same has been pointed in Wilke Chapter 23 “ Balance the data and context”, https://serialmentor.com/dataviz/balance-data-context.html
+
+
+- The dumbell plot is matching with the theme of the dataset very well
+
+- It's also a new kind of plot that we have not seen before
+
+- But it is lacking some sense of time and user interactiveness
+
+
+### Animating the Top lifts visualization
+
+```{r viz-animation-01, fig.height=5, fig.width=10}
+#install.packages('gganimate')
+#install.packages("gifski")
+library(gganimate)
+library(gifski)
+animation <- max_lifts_final %>% 
+  ggplot() + 
+  ggalt::geom_dumbbell(aes(y = lift,
+                    x = female, xend = male),
+                colour = "grey", size = 5,
+                colour_x = "#D6604C", colour_xend = "#395B74") +
+  labs(y = element_blank(),
+       x = "Top Lift Recorded (kg)",
+       title =  "How <span style='color:#D6604C'>Women</span> and <span style='color:#395B74'>Men</span> Differ in Top Lifts",
+       subtitle='\nThis plot depicts the difference between the heaviest lifts for each sex at International Powerlifting Federation\nevents over time. \n \n{closest_state}') +
+  theme(plot.title = element_markdown(lineheight = 1.1, size = 25, margin=margin(0,0,0,0)),
+        plot.subtitle = element_text(size = 15, margin=margin(8,0,-30,0))) +
+  scale_y_discrete(labels = c("Bench", "Deadlift", "Squat")) +
+  drop_axis(axis = "y") +
+  geom_text(aes(x = female, y = lift, label = paste(female, "kg")),
+            color = "#D6604C", size = 4, vjust = -2) +
+  geom_text(aes(x = male, y = lift, label = paste(male, "kg")),
+            color = "#395B74", size = 4, vjust = -2) +
+  transition_states(year, transition_length = 4, state_length = 1) +
+  ease_aes('cubic-in-out')
+
+a_gif <- animate(animation, 
+                 fps = 10, 
+                 duration = 25,
+        width = 800, height = 400, 
+        renderer = gifski_renderer("./heavy_lifts_each_sex.gif"))
+a_gif
+```
+
+***
+
+- This plot added the time dimension to the plot by displaying the visual around in a time series
+
+- This is definitely a great improvement from the previous one
+
+- But this graph do not append the yearly data and hence the user might immediately forget the previous year's values
+
+- Hence the user will not able to compare the change over the years and will not be able to see the trend
+
+### A line chart of differences over time
+
+```{r line chart,fig.height=5, fig.width=10}
+animation2 <- max_lifts_final %>% 
+  ungroup %>% 
+  mutate(lift = case_when(lift == "best3bench_kg" ~ "Bench",
+                          lift == "best3squat_kg" ~ "Squat",
+                          lift == "best3deadlift_kg" ~ "Deadlift")) %>% 
+  ggplot(aes(year, diff, group = lift, color = lift)) + 
+  geom_line(show.legend = FALSE) + 
+  geom_segment(aes(xend = 2019.1, yend = diff), linetype = 2, colour = 'grey', show.legend = FALSE) + 
+  geom_point(size = 2, show.legend = FALSE) + 
+  geom_text(aes(x = 2019.1, label = lift, color = "#000000"), hjust = 0, show.legend = FALSE) + 
+  drop_axis(axis = "y") +
+  transition_reveal(year) +
+  coord_cartesian(clip = 'off') +
+  theme(plot.title = element_text(size = 20)) +
+  labs(title = 'Difference over time',
+       y = 'Difference (kg)',
+       x = element_blank()) + 
+  theme(plot.margin = margin(5.5, 40, 5.5, 5.5))
+
+b_gif <- animate(animation2, 
+                 fps = 10, 
+                 duration = 25,
+        width = 800, height = 200, 
+        renderer = gifski_renderer("./difference_over_time.gif"))
+
+b_gif
+```
+
+***
+
+Difference over time:
+
+1.	The visual has multiple time courses, and correctly a line plot is used as pointed in Wilke Chapter 13 “Visualizing time series and other functions of an independent variable “section 13.2 https://serialmentor.com/dataviz/time-series.html#multiple-time-series-and-doseresponse-curves
+
+2.	By direct labeling the lines instead of providing a legend, they have successfully reduced the cognitive load required to read the figure as per Wilke Chapter 13, ““Visualizing time series and other functions of an independent variable”, section 13.2  https://serialmentor.com/dataviz/time-series.html#multiple-time-series-and-doseresponse-curves
+
+3.	The visual could have incorporated the title, data source statements. This figure could be posted on the web as is or otherwise used without separate caption block. This has been highlighted in Wilke Chapter 22, section 22.1 “Figure titles and caption”, https://serialmentor.com/dataviz/figure-titles-captions.html
+
+
+- This graph resolves the issue where it keeps on appending the previous year's data
+
+- The user is able to follow the change now and also able to visualize the trend
+
+- But this graph gives a little bit different visual of the data
+
+### Animation Composition
+
+```{r viz-animation-03}
+#install.packages("magick")
+library(magick)
+a_mgif <- image_read(a_gif)
+b_mgif <- image_read(b_gif)
+
+new_gif <- image_append(c(a_mgif[1], b_mgif[1]), stack = TRUE)
+for(i in 2:250){
+  combined <- image_append(c(a_mgif[i], b_mgif[i]), stack = TRUE)
+  new_gif <- c(new_gif, combined)
+}
+
+new_gif
+```
+
+***
+
+Placing Animations side-by-side with magick:
+
+Since the 2 plots are in the same pane, some readability is lost wrt to axis of the plots as per Wilke Chapter 24 “Use larger labels”, https://serialmentor.com/dataviz/small-axis-labels.html
+
+
+- Showing both the graphs together is a huge improvement as it lets the user see the actual values, the change and also the trend over years
+
+- But there can be more ways to find out insights from the data and look at the distribution and hidden trends
+
+- Also the visuals can be made interactive to engage the user more with the data, hence come our visuals and ideas
+
+
+Our Visuals {.storyboard}
+=========================================
+
+### Visual 1
+
+```{r Soumyadip Visual, fig.height=5, fig.width=10}
+library(ggridges)
+library(scales)
+library(viridis)
+library(forcats)
+ipf_lifts %>%
+  mutate(year = lubridate::year(date)) %>%
+  filter(year == 1994) %>%
+  mutate(age_class = fct_rev(as.factor(age_class))) %>%
+  filter(age_class != '5-12') %>%
+  filter(age_class != '80-999') %>%
+  drop_na(c(age_class,best3squat_kg)) %>%
+  ggplot(aes(x=best3squat_kg,y=age_class,fill=factor(..quantile..))) +
+  stat_density_ridges(geom="density_ridges_gradient",calc_ecdf = TRUE,
+                      quantiles = 4,quantile_lines = TRUE,
+                      na.rm = TRUE) +
+  scale_fill_viridis(discrete = TRUE,name="Quartiles") +
+  scale_x_continuous(limits = c(0,510),expand = c(0,0),labels=unit_format(unit="Kg")) +
+  theme_bw() +
+  labs(
+    title = "Distribution of Weight lifted in Squat for different Age Groups",
+    x = "",
+    y = "Age Classification"
+  )
+```
+
+***
+
+Distribution of Weight lifted in Squat for different Age Groups:
+
+- This visual shows the distribution of weights lifted by different age groups with the quartiles separated by color (Viridis)
+
+- The third quartile (Green) contains 50 to 75 precentile points and shows that people of ages between 24 to 34 lift the highest weights
+
+- Beyond that age group, the capability of lifting weights decreases gradually
+
+### Visual 2
+
+```{r RamyaPrakash Visuals}
+library(gganimate)
+library(gifski)
+library(ggridges)
+library(scales)
+library(viridis)
+
+ipf_lifts_year <- ipf_lifts %>% 
+                  mutate(year = format(date, "%Y")) %>%
+                  mutate(decade = year(date) - (year(date) %% 10))
+
+ipf_lifts_decade<- ggplot(data=ipf_lifts_year, mapping = aes(y=decade, x=best3deadlift_kg, fill=sex)) + 
+geom_density_ridges() + 
+labs(x = 	"Weight (kg)",y = "Decade",title = "How men and women differ in Best of 3 Deadlifts \n by decades") +
+scale_fill_viridis(discrete = TRUE,name="Quartiles") + 
+scale_x_continuous(limits = c(10,500))+
+theme_ridges()+ 
+transition_manual(year)
+
+my_gif <- animate(ipf_lifts_decade, 
+                 fps = 5, 
+                 duration = 5,
+        renderer = gifski_renderer("./ipf_lifts_decade.gif"))
+
+my_gif
+```
+
+***
+
+How men and women differ in Best of 3 Deadlifts by decades:
+
+This animated vizualization shows how men and women differ in Best of 3 deadlifts by decades.
+
+
+-Male lifters are able to lift higher maximal weights than women. 
+
+-In the inital decade there is no data available for women participants.
+
+-There is no trend shown in maximum weights lifted over the time in men or women. 
+
+-In the Recent decades there is an increase in data available. 
+
+### Visual 3
+
+```{r Shruti Visuals}
+#Body weight versus maximum bench lift, wrap by gender
+
+library(tidyverse)
+library(janitor)
+library(readr)
+library(knitr)
+library(dplyr)
+
+
+df_clean <- ipf_lifts %>% 
+  janitor::clean_names()
+
+
+ipf_data <- df_clean %>% 
+  select(name:weight_class_kg, starts_with("best"), 
+         place, date, federation, meet_name)  %>% 
+  filter(!is.na(date)) 
+
+#Body weight versus maximum bench lift, wrap by gender
+p1 <- ggplot(data = ipf_data,
+       aes(x = bodyweight_kg, y = best3bench_kg,
+           color = equipment)) +
+  geom_jitter(stat="identity")+
+    facet_wrap(~sex, scales = "free") +
+ labs(x = "The recorded bodyweight of the lifter (kg)",
+      y = "Maximum successful attempt for the benchlift (kg)",
+            color = "Equipment category")+
+ theme_bw()+ 
+ theme(
+    axis.title.x = element_text(size=10),
+    axis.title.y = element_text(size=10),
+    legend.position="right",
+    axis.text = element_text(
+      size = 12))
+
+p1
+
+```
+
+***
+
+Body weight versus maximum bench lift, wrap by gender:
+
+•	This visual shows how men and women differ in maximum weight lifted in bench lift by equipment types.
+
+•	For both men and women, majority of bench lifts are done in the equipment- single ply category and almost negligible in the wraps equipment category.
+
+•	Majority of men successfully lift weights around 200-250 kg.
+
+•	Majority of women successfully lift weights around 100-125 kg. 
+
+### Regression Visuals
+
+```{r Shruti Reg Visuals}
+library(tidyverse)
+library(janitor)
+library(readr)
+library(dplyr)
+
+df_clean <- ipf_lifts %>% 
+  janitor::clean_names()
+
+#Regression line between Total Kg lifted and Body Weight
+ipf<- df_clean %>% mutate(totalkg = best3squat_kg + best3bench_kg+ best3deadlift_kg)
+   
+model_colors <- RColorBrewer::brewer.pal(3, "Set1")
+
+
+p0 <- ggplot(data = ipf,
+            mapping = aes(x = bodyweight_kg, y = totalkg))
+
+p1 <- p0 +
+    geom_smooth(method = "lm", aes(color = "OLS", fill = "OLS")) +
+    geom_smooth(method = "lm", formula = y ~ splines::bs(x, df = 3),
+                aes(color = "Cubic Spline", fill = "Cubic Spline")) +
+    geom_smooth(method = "loess",
+                aes(color = "LOESS", fill = "LOESS"))+facet_wrap((~sex))
+
+
+p1 + scale_color_manual(name = "Models", values = model_colors) +
+    scale_fill_manual(name = "Models", values = model_colors) +
+    theme(legend.position = "top")
+
+```
+
+***
+
+Regression line between Total Kg lifted and Body Weight by gender:
+
+
+•	This visual shows a gender wise relation between total weight lifted across all 3 varieties and body weight of the lifter.
+
+•	While a woman of weight around 160 kg is likely to lift 700 kg, a man of the same weight is likely to lift around 950 kg.
+
+•	The total weight lifted by both the genders increase (as expected) as per their body weight though the increase seems to be more steep for men.
+
+
+
+Conclusion {.storyboard}
+=========================================
+
+### THANK YOU!!
+
+```{r conclusion-01,fig.height=5, fig.width=8}
+library(jpeg)
+
+pg <- readJPEG("img/ThankYou.jpg")
+plot.new() 
+rasterImage(pg,0,0,1,1)
+```
+
+
+***
+
+
+Our GitHub repo: 
+https://github.com/RamyaPrakashPT/DataVisualization-DesignContest
+
+Our Rpubs link: 
+http://rpubs.com/RamyaPrakash/DesignContest
+http://rpubs.com/soumyadipmitra/designcontest
+
+Shiny app link:
+https://soumyadip-mitra.shinyapps.io/DataVisualization-DesignContest/
+
+
+THANK YOU!!

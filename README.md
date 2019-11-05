@@ -1,2 +1,4 @@
-# DataVisualization-DesignContest
-Design Contest repo for DSBA 5122
+#TidyTuesday-Powerlifting
+# DSBA5122-DataVisualization Design Contest
+DataVisualization
+Ryan Wesslen @UNCC
